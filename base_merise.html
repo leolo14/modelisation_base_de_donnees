@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Modélisation Merise</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 70px 0 0 0;
+            font-family: Arial, sans-serif;
+        }
+
+        .toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #f0f0f0;
+            padding: 10px;
+            display: flex;
+            gap: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        button {
+            padding: 8px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        .canvas {
+            width: 100%;
+            height: calc(100vh - 70px);
+            position: relative;
+            background: #fff;
+            overflow: auto;
+        }
+
+        .entity {
+            position: absolute;
+            width: 200px;
+            background: #e3f2fd;
+            border: 2px solid #2196F3;
+            border-radius: 0px;
+            cursor: move;
+        }
+    .relation {
+        position: absolute;
+        width: 100px; /* Largeur du carré */
+        height: 100px; /* Hauteur égale à la largeur pour former un carré */
+        background: #f0f4c3;
+        border: 2px solid #cddc39;
+        border-radius: 15px; /* Rayon d'arrondi des coins */
+        cursor: move;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+        .relation .content {
+            padding: 10px;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .entity-title {
+            background: #2196F3;
+            color: white;
+            padding: 8px;
+            font-weight: bold;
+            
+        }
+
+        .entity-attributes {
+            padding: 10px;
+            min-height: 50px;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            display: none;
+        }
+
+        .entity:hover .delete-btn,
+        .relation:hover .delete-btn {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button onclick="addEntity()">Ajouter Entité</button>
+        <button onclick="addRelation()">Ajouter Relation</button>
+        <button onclick="exportPNG()">Exporter PNG</button>
+    </div>
+
+    <div class="canvas" id="canvas"></div>
+
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+
+    <script>
+        let elements = [];
+
+        function addEntity() {
+            const entity = document.createElement('div');
+            entity.className = 'entity';
+            entity.style.left = '50px';
+            entity.style.top = '50px';
+            entity.innerHTML = `
+                <button class="delete-btn" onclick="deleteElement(this.parentElement)">×</button>
+                <div class="entity-title" contenteditable="true">Entité</div>
+                <div class="entity-attributes" contenteditable="true">
+                    Attributs...
+                </div>
+            `;
+            makeDraggable(entity);
+            canvas.appendChild(entity);
+            elements.push(entity);
+        }
+
+        function addRelation() {
+            const relation = document.createElement('div');
+            relation.className = 'relation';
+            relation.style.left = '250px';
+            relation.style.top = '50px';
+            relation.innerHTML = `
+                <button class="delete-btn" onclick="deleteElement(this.parentElement)">×</button>
+                <div class="content" contenteditable="true">Relation</div>
+            `;
+            makeDraggable(relation);
+            canvas.appendChild(relation);
+            elements.push(relation);
+        }
+
+        function deleteElement(element) {
+            if(confirm("Supprimer cet élément ?")) {
+                elements = elements.filter(el => el !== element);
+                element.remove();
+            }
+        }
+
+        function makeDraggable(element) {
+            let isDragging = false;
+            let startX, startY, initialX, initialY;
+
+            element.addEventListener('mousedown', startDrag);
+            
+            function startDrag(e) {
+                if(e.target.classList.contains('delete-btn')) return;
+
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                initialX = parseFloat(element.style.left) || 0;
+                initialY = parseFloat(element.style.top) || 0;
+                
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', stopDrag);
+            }
+
+            function drag(e) {
+                if(!isDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                element.style.left = initialX + dx + 'px';
+                element.style.top = initialY + dy + 'px';
+            }
+
+            function stopDrag() {
+                isDragging = false;
+                document.removeEventListener('mousemove', drag);
+                document.removeEventListener('mouseup', stopDrag);
+            }
+        }
+
+        async function exportPNG() {
+            const canvasElement = document.getElementById('canvas');
+            const tempCanvas = await html2canvas(canvasElement);
+            const link = document.createElement('a');
+            link.download = 'modele-merise.png';
+            link.href = tempCanvas.toDataURL();
+            link.click();
+        }
+    </script>
+</body>
+</html>
