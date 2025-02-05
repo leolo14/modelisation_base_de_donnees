@@ -50,24 +50,21 @@
             border: 2px solid #2196F3;
             border-radius: 0px;
             cursor: move;
+            z-index: 2;
         }
-    .relation {
-        position: absolute;
-        width: 100px; /* Largeur du carré */
-        height: 100px; /* Hauteur égale à la largeur pour former un carré */
-        background: #f0f4c3;
-        border: 2px solid #cddc39;
-        border-radius: 15px; /* Rayon d'arrondi des coins */
-        cursor: move;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
 
-        .relation .content {
-            padding: 10px;
-            text-align: center;
-            word-break: break-word;
+        .relation {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            background: #f0f4c3;
+            border: 2px solid #cddc39;
+            border-radius: 15px;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
         }
 
         .entity-title {
@@ -75,7 +72,6 @@
             color: white;
             padding: 8px;
             font-weight: bold;
-            
         }
 
         .entity-attributes {
@@ -101,21 +97,43 @@
         .relation:hover .delete-btn {
             display: block;
         }
+
+        #lines-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        .line-handle {
+            pointer-events: all;
+        }
     </style>
 </head>
 <body>
     <div class="toolbar">
         <button onclick="addEntity()">Ajouter Entité</button>
         <button onclick="addRelation()">Ajouter Relation</button>
+        <button onclick="startLineDrawing()">Dessiner un Trait</button>
         <button onclick="exportPNG()">Exporter PNG</button>
     </div>
 
-    <div class="canvas" id="canvas"></div>
+    <div class="canvas" id="canvas">
+        <svg id="lines-svg"></svg>
+    </div>
 
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 
     <script>
         let elements = [];
+        let isDrawingLine = false;
+        let currentLine = null;
+        let startPoint = null;
+        const canvas = document.getElementById('canvas');
+        const svg = document.getElementById('lines-svg');
 
         function addEntity() {
             const entity = document.createElement('div');
@@ -148,10 +166,177 @@
             elements.push(relation);
         }
 
+        function startLineDrawing() {
+            isDrawingLine = true;
+            canvas.style.cursor = 'crosshair';
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (isDrawingLine && e.target === canvas) {
+                const rect = canvas.getBoundingClientRect();
+                startPoint = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                };
+                
+                currentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                currentLine.setAttribute('x1', startPoint.x);
+                currentLine.setAttribute('y1', startPoint.y);
+                currentLine.setAttribute('x2', startPoint.x);
+                currentLine.setAttribute('y2', startPoint.y);
+                currentLine.setAttribute('stroke', 'black');
+                currentLine.setAttribute('stroke-width', '2');
+                currentLine.style.pointerEvents = 'all';
+                svg.appendChild(currentLine);
+
+                document.addEventListener('mousemove', drawLine);
+                document.addEventListener('mouseup', finishLine);
+            }
+        });
+
+        function drawLine(e) {
+            if (!currentLine) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            currentLine.setAttribute('x2', x);
+            currentLine.setAttribute('y2', y);
+        }
+
+        function finishLine() {
+            document.removeEventListener('mousemove', drawLine);
+            document.removeEventListener('mouseup', finishLine);
+            
+            if (currentLine) {
+                const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const x1 = parseFloat(currentLine.getAttribute('x1'));
+                const y1 = parseFloat(currentLine.getAttribute('y1'));
+                const x2 = parseFloat(currentLine.getAttribute('x2'));
+                const y2 = parseFloat(currentLine.getAttribute('y2'));
+
+                // Création des poignées
+                const startHandle = createHandle(x1, y1);
+                const endHandle = createHandle(x2, y2);
+                
+                group.appendChild(currentLine);
+                group.appendChild(startHandle);
+                group.appendChild(endHandle);
+                group.appendChild(createDeleteButton(group, (x1 + x2)/2, (y1 + y2)/2));
+                
+                svg.appendChild(group);
+                makeLineDraggable(group, currentLine, startHandle, endHandle);
+                elements.push(group);
+            }
+            
+            currentLine = null;
+            isDrawingLine = false;
+            canvas.style.cursor = 'default';
+        }
+
+        function createHandle(x, y) {
+            const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            handle.setAttribute('cx', x);
+            handle.setAttribute('cy', y);
+            handle.setAttribute('r', '6');
+            handle.setAttribute('fill', 'blue');
+            handle.setAttribute('stroke', 'white');
+            handle.setAttribute('stroke-width', '2');
+            handle.style.pointerEvents = 'all';
+            handle.style.cursor = 'pointer';
+            return handle;
+        }
+
+        function createDeleteButton(group, x, y) {
+            const foreignObject = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+            foreignObject.setAttribute('x', x - 10);
+            foreignObject.setAttribute('y', y - 10);
+            foreignObject.setAttribute('width', '20');
+            foreignObject.setAttribute('height', '20');
+            foreignObject.innerHTML = `
+                <button xmlns="http://www.w3.org/1999/xhtml" 
+                        style="background: #ff4444; color: white; border: none; border-radius: 50%; 
+                        width: 20px; height: 20px; cursor: pointer; display: none;"
+                        onclick="deleteElement(this.parentNode.parentNode)">×</button>
+            `;
+            
+            group.addEventListener('mouseenter', () => {
+                foreignObject.querySelector('button').style.display = 'block';
+            });
+            
+            group.addEventListener('mouseleave', () => {
+                foreignObject.querySelector('button').style.display = 'none';
+            });
+
+            return foreignObject;
+        }
+
+        function makeLineDraggable(group, line, startHandle, endHandle) {
+            let currentTarget = null;
+            
+            const startDrag = (e) => {
+                e.preventDefault();
+                currentTarget = e.target;
+                const rect = canvas.getBoundingClientRect();
+                const offsetX = e.clientX - rect.left;
+                const offsetY = e.clientY - rect.top;
+                
+                const x1 = parseFloat(line.getAttribute('x1'));
+                const y1 = parseFloat(line.getAttribute('y1'));
+                const x2 = parseFloat(line.getAttribute('x2'));
+                const y2 = parseFloat(line.getAttribute('y2'));
+
+                document.addEventListener('mousemove', move);
+                document.addEventListener('mouseup', stop);
+
+                function move(e) {
+                    const newX = e.clientX - rect.left;
+                    const newY = e.clientY - rect.top;
+                    
+                    if (currentTarget === line) {
+                        const dx = newX - offsetX;
+                        const dy = newY - offsetY;
+                        line.setAttribute('x1', x1 + dx);
+                        line.setAttribute('y1', y1 + dy);
+                        line.setAttribute('x2', x2 + dx);
+                        line.setAttribute('y2', y2 + dy);
+                        startHandle.setAttribute('cx', x1 + dx);
+                        startHandle.setAttribute('cy', y1 + dy);
+                        endHandle.setAttribute('cx', x2 + dx);
+                        endHandle.setAttribute('cy', y2 + dy);
+                    } 
+                    else if (currentTarget === startHandle) {
+                        line.setAttribute('x1', newX);
+                        line.setAttribute('y1', newY);
+                        startHandle.setAttribute('cx', newX);
+                        startHandle.setAttribute('cy', newY);
+                    } 
+                    else if (currentTarget === endHandle) {
+                        line.setAttribute('x2', newX);
+                        line.setAttribute('y2', newY);
+                        endHandle.setAttribute('cx', newX);
+                        endHandle.setAttribute('cy', newY);
+                    }
+                }
+
+                function stop() {
+                    document.removeEventListener('mousemove', move);
+                    document.removeEventListener('mouseup', stop);
+                }
+            };
+
+            line.addEventListener('mousedown', startDrag);
+            startHandle.addEventListener('mousedown', startDrag);
+            endHandle.addEventListener('mousedown', startDrag);
+        }
+
         function deleteElement(element) {
             if(confirm("Supprimer cet élément ?")) {
                 elements = elements.filter(el => el !== element);
-                element.remove();
+                if (element instanceof HTMLElement) {
+                    element.remove();
+                } else if (element instanceof SVGElement) {
+                    element.parentNode.removeChild(element);
+                }
             }
         }
 
