@@ -2,74 +2,83 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Modélisation Merise</title>
     <style>
         body {
             margin: 0;
-            padding: 70px 0 0;
+            padding: 70px 0 0 0;
             font-family: Arial, sans-serif;
-            background: #f7f7f7;
         }
+
         .toolbar {
             position: fixed;
             top: 0;
             left: 0;
             right: 0;
-            background: #333;
+            background: #f0f0f0;
             padding: 10px;
             display: flex;
             gap: 10px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
+
         button {
-            padding: 10px 15px;
+            padding: 8px 15px;
             background: #4CAF50;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-weight: bold;
-            transition: background 0.3s ease;
         }
+
         button:hover {
             background: #45a049;
         }
+
         .canvas {
             width: 100%;
             height: calc(100vh - 70px);
             position: relative;
-            background: white;
-            overflow: hidden;
+            background: #fff;
+            overflow: auto;
         }
-        .entity, .relation {
-            position: absolute;
-            padding: 10px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            z-index: 2;
-        }
+
         .entity {
+            position: absolute;
+            width: 200px;
             background: #e3f2fd;
             border: 2px solid #2196F3;
-            border-radius: 5px;
+            border-radius: 0px;
+            cursor: move;
+            z-index: 2;
         }
+
         .relation {
+            position: absolute;
+            width: 100px;
+            height: 100px;
             background: #f0f4c3;
             border: 2px solid #cddc39;
-            border-radius: 10px;
+            border-radius: 15px;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
         }
+
         .entity-title {
             background: #2196F3;
             color: white;
             padding: 8px;
             font-weight: bold;
-            cursor: text;
         }
+
         .entity-attributes {
             padding: 10px;
             min-height: 50px;
-            cursor: text;
         }
+
         .delete-btn {
             position: absolute;
             top: -10px;
@@ -82,12 +91,13 @@
             height: 20px;
             cursor: pointer;
             display: none;
-            font-weight: bold;
         }
+
         .entity:hover .delete-btn,
         .relation:hover .delete-btn {
             display: block;
         }
+
         #lines-svg {
             position: absolute;
             top: 0;
@@ -95,7 +105,11 @@
             width: 100%;
             height: 100%;
             pointer-events: none;
-            z-index: 1;
+            z-index: 3;
+        }
+
+        .line-handle {
+            pointer-events: all;
         }
     </style>
 </head>
@@ -117,6 +131,7 @@
         let elements = [];
         let isDrawingLine = false;
         let currentLine = null;
+        let startPoint = null;
         const canvas = document.getElementById('canvas');
         const svg = document.getElementById('lines-svg');
 
@@ -128,7 +143,9 @@
             entity.innerHTML = `
                 <button class="delete-btn" onclick="deleteElement(this.parentElement)">×</button>
                 <div class="entity-title" contenteditable="true">Entité</div>
-                <div class="entity-attributes" contenteditable="true">Attributs...</div>
+                <div class="entity-attributes" contenteditable="true">
+                    Attributs...
+                </div>
             `;
             makeDraggable(entity);
             canvas.appendChild(entity);
@@ -157,16 +174,21 @@
         canvas.addEventListener('mousedown', (e) => {
             if (isDrawingLine && e.target === canvas) {
                 const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
+                startPoint = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top
+                };
+                
                 currentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                currentLine.setAttribute('x1', x);
-                currentLine.setAttribute('y1', y);
-                currentLine.setAttribute('x2', x);
-                currentLine.setAttribute('y2', y);
+                currentLine.setAttribute('x1', startPoint.x);
+                currentLine.setAttribute('y1', startPoint.y);
+                currentLine.setAttribute('x2', startPoint.x);
+                currentLine.setAttribute('y2', startPoint.y);
                 currentLine.setAttribute('stroke', 'black');
                 currentLine.setAttribute('stroke-width', '2');
+                currentLine.style.pointerEvents = 'all';
                 svg.appendChild(currentLine);
+
                 document.addEventListener('mousemove', drawLine);
                 document.addEventListener('mouseup', finishLine);
             }
@@ -184,15 +206,137 @@
         function finishLine() {
             document.removeEventListener('mousemove', drawLine);
             document.removeEventListener('mouseup', finishLine);
+            
+            if (currentLine) {
+                const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                const x1 = parseFloat(currentLine.getAttribute('x1'));
+                const y1 = parseFloat(currentLine.getAttribute('y1'));
+                const x2 = parseFloat(currentLine.getAttribute('x2'));
+                const y2 = parseFloat(currentLine.getAttribute('y2'));
+
+                // Création des poignées
+                const startHandle = createHandle(x1, y1);
+                const endHandle = createHandle(x2, y2);
+                
+                group.appendChild(currentLine);
+                group.appendChild(startHandle);
+                group.appendChild(endHandle);
+                group.appendChild(createDeleteButton(group, (x1 + x2)/2, (y1 + y2)/2));
+                
+                svg.appendChild(group);
+                makeLineDraggable(group, currentLine, startHandle, endHandle);
+                elements.push(group);
+            }
+            
             currentLine = null;
             isDrawingLine = false;
             canvas.style.cursor = 'default';
         }
 
+        function createHandle(x, y) {
+            const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            handle.setAttribute('cx', x);
+            handle.setAttribute('cy', y);
+            handle.setAttribute('r', '6');
+            handle.setAttribute('fill', 'blue');
+            handle.setAttribute('stroke', 'white');
+            handle.setAttribute('stroke-width', '2');
+            handle.style.pointerEvents = 'all';
+            handle.style.cursor = 'pointer';
+            return handle;
+        }
+
+        function createDeleteButton(group, x, y) {
+            const foreignObject = document.createElementNS('http://www.w3.org/2000/svg', 'foreignObject');
+            foreignObject.setAttribute('x', x - 10);
+            foreignObject.setAttribute('y', y - 10);
+            foreignObject.setAttribute('width', '20');
+            foreignObject.setAttribute('height', '20');
+            foreignObject.innerHTML = `
+                <button xmlns="http://www.w3.org/1999/xhtml" 
+                        style="background: #ff4444; color: white; border: none; border-radius: 50%; 
+                        width: 20px; height: 20px; cursor: pointer; display: none;"
+                        onclick="deleteElement(this.parentNode.parentNode)">×</button>
+            `;
+            
+            group.addEventListener('mouseenter', () => {
+                foreignObject.querySelector('button').style.display = 'block';
+            });
+            
+            group.addEventListener('mouseleave', () => {
+                foreignObject.querySelector('button').style.display = 'none';
+            });
+
+            return foreignObject;
+        }
+
+        function makeLineDraggable(group, line, startHandle, endHandle) {
+            let currentTarget = null;
+            
+            const startDrag = (e) => {
+                e.preventDefault();
+                currentTarget = e.target;
+                const rect = canvas.getBoundingClientRect();
+                const offsetX = e.clientX - rect.left;
+                const offsetY = e.clientY - rect.top;
+                
+                const x1 = parseFloat(line.getAttribute('x1'));
+                const y1 = parseFloat(line.getAttribute('y1'));
+                const x2 = parseFloat(line.getAttribute('x2'));
+                const y2 = parseFloat(line.getAttribute('y2'));
+
+                document.addEventListener('mousemove', move);
+                document.addEventListener('mouseup', stop);
+
+                function move(e) {
+                    const newX = e.clientX - rect.left;
+                    const newY = e.clientY - rect.top;
+                    
+                    if (currentTarget === line) {
+                        const dx = newX - offsetX;
+                        const dy = newY - offsetY;
+                        line.setAttribute('x1', x1 + dx);
+                        line.setAttribute('y1', y1 + dy);
+                        line.setAttribute('x2', x2 + dx);
+                        line.setAttribute('y2', y2 + dy);
+                        startHandle.setAttribute('cx', x1 + dx);
+                        startHandle.setAttribute('cy', y1 + dy);
+                        endHandle.setAttribute('cx', x2 + dx);
+                        endHandle.setAttribute('cy', y2 + dy);
+                    } 
+                    else if (currentTarget === startHandle) {
+                        line.setAttribute('x1', newX);
+                        line.setAttribute('y1', newY);
+                        startHandle.setAttribute('cx', newX);
+                        startHandle.setAttribute('cy', newY);
+                    } 
+                    else if (currentTarget === endHandle) {
+                        line.setAttribute('x2', newX);
+                        line.setAttribute('y2', newY);
+                        endHandle.setAttribute('cx', newX);
+                        endHandle.setAttribute('cy', newY);
+                    }
+                }
+
+                function stop() {
+                    document.removeEventListener('mousemove', move);
+                    document.removeEventListener('mouseup', stop);
+                }
+            };
+
+            line.addEventListener('mousedown', startDrag);
+            startHandle.addEventListener('mousedown', startDrag);
+            endHandle.addEventListener('mousedown', startDrag);
+        }
+
         function deleteElement(element) {
-            if (confirm("Supprimer cet élément ?")) {
+            if(confirm("Supprimer cet élément ?")) {
                 elements = elements.filter(el => el !== element);
-                element.remove();
+                if (element instanceof HTMLElement) {
+                    element.remove();
+                } else if (element instanceof SVGElement) {
+                    element.parentNode.removeChild(element);
+                }
             }
         }
 
@@ -201,22 +345,22 @@
             let startX, startY, initialX, initialY;
 
             element.addEventListener('mousedown', startDrag);
-
+            
             function startDrag(e) {
-                if (e.target.classList.contains('delete-btn')) return;
+                if(e.target.classList.contains('delete-btn')) return;
 
                 isDragging = true;
                 startX = e.clientX;
                 startY = e.clientY;
                 initialX = parseFloat(element.style.left) || 0;
                 initialY = parseFloat(element.style.top) || 0;
-
+                
                 document.addEventListener('mousemove', drag);
                 document.addEventListener('mouseup', stopDrag);
             }
 
             function drag(e) {
-                if (!isDragging) return;
+                if(!isDragging) return;
                 const dx = e.clientX - startX;
                 const dy = e.clientY - startY;
                 element.style.left = initialX + dx + 'px';
@@ -231,7 +375,8 @@
         }
 
         async function exportPNG() {
-            const tempCanvas = await html2canvas(canvas);
+            const canvasElement = document.getElementById('canvas');
+            const tempCanvas = await html2canvas(canvasElement);
             const link = document.createElement('a');
             link.download = 'modele-merise.png';
             link.href = tempCanvas.toDataURL();
